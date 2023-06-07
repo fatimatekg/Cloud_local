@@ -267,4 +267,4 @@ def generate_insert_queries_route():
         })
 
 if __name__ == '__main__':
-    app.run(port=8080,debug=True)
+    app.run(port=8085,debug=True)

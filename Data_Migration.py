@@ -15,7 +15,7 @@ error_response = []
 def get_connection(connection_name):
     logging.info(f"Getting connection for {connection_name}")
     config = configparser.ConfigParser()
-    config.read('cloud database.ini')
+    config.read('C:/projects/Cloud_local/cloud database.ini')
     host = config[connection_name]['host']
     database = config[connection_name]['database']
     user = config[connection_name]['user']

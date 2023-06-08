@@ -3,6 +3,7 @@ import cx_Oracle
 import configparser
 import logging
 from flask import Flask, request, jsonify
+from flask_cors import cross_origin
 
 # Set up logging
 log_format = "%(asctime)s - %(levelname)s - %(message)s"
@@ -10,10 +11,11 @@ logging.basicConfig(filename='D:/insert_log.log', level=logging.INFO, format=log
 
 app = Flask(__name__)
 
+error_response = []
 def get_connection(connection_name):
     logging.info(f"Getting connection for {connection_name}")
     config = configparser.ConfigParser()
-    config.read('Database.ini')
+    config.read('cloud database.ini')
     host = config[connection_name]['host']
     database = config[connection_name]['database']
     user = config[connection_name]['user']
@@ -24,21 +26,24 @@ def get_connection(connection_name):
     logging.info(f"Connection established for {connection_name}")
     return connection
 
-def execute_queries(connection, queries):
+def execute_queries(connection, queries, acc_id):
     cursor = connection.cursor()
     for query in queries:
         try:
             cursor.execute(query)
         except cx_Oracle.IntegrityError as e:
-            logging.error(f"Error executing query: {query}")
-            logging.error(f"IntegrityError: {str(e)}")
+            error_message = f"IntegrityError: {str(e)}\nError executing query for account ID {acc_id}: {query}"
+            logging.error(error_message)
+            error_response.append(error_message)
             continue
         except Exception as e:
-            logging.error(f"Error executing query: {query}")
-            logging.error(f"Error: {str(e)}")
+            error_message = f"Error: {str(e)}\nError executing query for account ID {acc_id}: {query}"
+            logging.error(error_message)
+            error_response.append(error_message)
             continue
     connection.commit()
     cursor.close()
+    return error_response
 
 def generate_insert_queries(account_ids, user_id, source_connection_name, target_connection_name):
     try:
@@ -173,7 +178,7 @@ def generate_insert_queries(account_ids, user_id, source_connection_name, target
                 "message": "Insert queries generated successfully"
             })
 
-            execute_queries(target_connection, insert_queries)
+            execute_queries(target_connection, insert_queries, acc_id)
 
             with open(f'D:/Delete_queries_for_{acc_id}.sql', 'w') as file:
                 file.writelines('\n'.join(delete_queries))
@@ -201,7 +206,7 @@ def generate_insert_queries(account_ids, user_id, source_connection_name, target
             "status": "Success",
             "message": "All accounts processed successfully"
         })
-        return jsonify(response)
+        return response
 
     except cx_Oracle.DatabaseError as e:
         logging.error(f"An Oracle database error occurred: {str(e)}")
@@ -225,29 +230,35 @@ def generate_insert_queries(account_ids, user_id, source_connection_name, target
         })
         return jsonify(response)
 
-
 # Main program
 
-from flask import Flask, jsonify, request
-
-app = Flask(__name__)
 
 @app.route('/generate_insert_queries', methods=['POST'])
+@cross_origin()
 def generate_insert_queries_route():
     try:
         data = request.get_json()
         account_ids = data.get('account_ids', [])
-        user_id = data.get('user_id', '')
+        user_id = data.get('user_id', '').upper()
         source_connection_name = data.get('source_connection_name', '').casefold()
         target_connection_name = data.get('target_connection_name', '').casefold()
 
         response = generate_insert_queries(account_ids, user_id, source_connection_name, target_connection_name)
+        # Check if any error messages were returned
+        error_messages = [msg["message"] for msg in response if msg["status"] == "Error"]
 
-        return jsonify({
-            "status": "Success",
-            "message": response
-        })
-
+        if len(error_messages) > 0:
+            return jsonify({
+                "status": "Error",
+                "message": error_messages
+            })
+        else:
+            return jsonify({
+                "execution_status": error_response,
+                "status": "Success",
+                "message": response
+            })
+            
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}")
         return jsonify({
@@ -256,4 +267,5 @@ def generate_insert_queries_route():
         })
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=4000, debug=True)
+    app.run(port=8080,debug=True)
+    
